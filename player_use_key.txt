@@ -1,0 +1,58 @@
+@name Player Use Key
+@persist Senders:array Use:table
+
+if( first() ) {
+    runOnTick(1)
+    dsSetScope(2)
+    dsJoinGroup( "DSS.Events" )
+    Senders = array()
+    Use = table()
+}
+
+if( dsClk() & maxquota() < 250 ) {
+    dsSendDirect( "Error.TickQuota", dsGetSender(), 0 )
+}
+
+if( dsClk( "Bind.Use" ) ) {
+    E = dsGetSender()
+    Bind = dsGetNumber()
+    
+    for(I=1, Senders:count()) { if(E == Senders[I, entity]) {Found = 1,break} }
+    
+    if( Bind ) {
+        if(!Found) {Senders:pushEntity(E)}
+    } else {
+        if(Found) {Senders:remove(I)}
+    }
+}
+
+Checked = table()
+for( I = 1, Senders:count() ) {
+    E = Senders[I, entity]
+    
+    if( !E ) {
+        Senders:remove(I)
+        break
+    }
+    
+    Owner = E:owner()
+    OID = Owner:steamID()
+    
+    if( !Checked[OID, number] ) {
+        UseLast = Use[OID, number]
+        Use[OID, number] = Owner:keyUse() + 1
+        
+        Checked[OID, number] = ( Use[OID, number] == 2 & UseLast == 1 ) + 1
+    }
+    
+    if( Checked[OID, number] == 2 ) {
+        T = table()
+        T["weapon_type", string] = Owner:weapon():type()
+        T["aim_entity", entity] = Owner:aimEntity()
+        T["aim_pos", vector] = Owner:aimPos()
+        
+        dsSendDirect( "Use.Triggered", E, T )
+    }
+}
+
+if( !owner() ) { selfDestructAll() }
