@@ -1,8 +1,9 @@
 @name EGP Main Controller
 @inputs E:wirelink Reset
+@outputs Ops
 @persist Owner:entity Self:entity
-@persist Controllers:array Buttons:array Map:table
-@persist NextID
+@persist Controllers:array Buttons:table Info:gtable
+@persist LastCount
 
 #[
     This is a sort of MVC style way of writing EGP
@@ -12,51 +13,70 @@
     Dependencies: player_use_key.txt
 ]#
 
-# More of a lazy trick really
-function void wirelink:egpDimensions(ObjectID) {
-    TopLeft = This:egpPos(ObjectID)
-    BottomRight = TopLeft + This:egpSize(ObjectID)
+function number nextID() {
+    ID = Info["NextID", number]
+    Info["NextID", number] = ID + 1
+    return ID
 }
 
 # Creates a button where the text is centered inside a Width x 30 rounded box
-function void wirelink:egpButton(Text:string, Position:vector2, Width) {
-    ButtonID = NextID, NextID++
-    TextID = NextID, NextID++
+function table newButton(Text:string, Position:vector2, Width) {
+    Button = table()
     
-    This:egpRoundedBoxOutline(ButtonID, Position, vec2(Width,30))
-    This:egpText(TextID, Text, vec2(0,0))
-    This:egpAlign(TextID, 1, 1)
-    This:egpParent(TextID, ButtonID)
+    ContainerID = nextID()
+    TextID      = nextID()
+    BorderColor = vec(255, 255, 255)
+    TextColor   = vec(0, 0, 200)
     
-    # We keep a list of buttons to track hover and click events
-    Buttons:pushNumber(ButtonID)
+    
+    E:egpRoundedBoxOutline(ContainerID, Position, vec2(Width,30))
+    E:egpColor(ContainerID, BorderColor)
+    E:egpText(TextID, Text, vec2(0,0))
+    E:egpAlign(TextID, 1, 1)
+    E:egpColor(TextID, TextColor)
+    E:egpParent(TextID, ContainerID)
+    
+    TopLeft = E:egpPos(ContainerID)
+    
+    # Save defaults to "object"
+    Button["Text", string]           = Text
+    Button["ContainerID", number]    = ContainerID
+    Button["TextID", number]         = TextID
+    Button["BorderColor", vector]    = BorderColor
+    Button["TextColor", vector]      = TextColor
+    Button["HighlightColor", vector] = vec(0, 128, 255)
+    Button["EGP", wirelink]          = E
+    Button["TopLeft", vector2]       = TopLeft
+    Button["BottomRight", vector2]   = TopLeft + E:egpSize(ContainerID)
+    
+    Buttons:pushTable(Button)
+    return Button
 }
 
-# On mouse enter, highlight button text (ButtonID + 1 = TextID)
-function void wirelink:egpHighlight(ButtonID) {
-    This:egpColor(ButtonID + 1, vec(0, 255, 0))
+function normal table:btHitTest(Cursor:vector2) {
+    return inrange(Cursor, This["TopLeft", vector2], This["BottomRight", vector2])
 }
 
-# On mouse exit, unhighlight button text (ButtonID + 1 = TextID)
-function void wirelink:egpUnhighlight(ButtonID) {
-    This:egpColor(ButtonID + 1, vec(255, 255, 255))
+# On mouse enter, highlight button text
+function void table:btHighlight() {
+    This["EGP", wirelink]:egpColor(This["TextID", number], This["HighlightColor", vector])
+}
+
+# On mouse exit, unhighlight button text
+function void table:btUnhighlight() {
+    This["EGP", wirelink]:egpColor(This["TextID", number], This["TextColor", vector])
 }
 
 # Quick function for creating the cursor
 function void wirelink:egpCreateCursor(ObjectID) {
-    This:egpCircle(ObjectID, vec2(256,256), vec2(5,5))
-    This:egpParentToCursor(ObjectID)
+    This:egpCircleOutline(ObjectID, vec2(0,0), vec2(5,5))
     This:egpColor(ObjectID, vec(255, 0, 0))
+    This:egpParentToCursor(ObjectID)
 }
 
 # Utility method on the entity class
 function normal entity:lookingAt(Other:entity) {
     return This:aimEntity() == Other
-}
-
-# Utitlity method on the array class
-function number array:last() {
-    return This[This:maxIndex(), number]
 }
 
 # This method signals another controller to take over execution
@@ -85,90 +105,91 @@ function void createButtons() {
         N = I -1
         
         Name = Controllers[I, string]
-        E:egpButton(Name, vec2(floor(N / 16) * 128, N * 32), 126)
-        Map[Buttons:last(), string] = Name
+        Button = newButton(Name, vec2(floor(N / 16) * 128, N * 32), 126)
+        Button["Controller", string] = Name
     }
-    E:egpOrder(1, NextID - 1)
 }
 
-if(~Reset&Reset) {
-    dsSend("Halt", "EGP.Portal", entity())
-}
+#[
+    Runtime code starts here
+]#
 
 # Setup for main controller execution
-if(~Reset&Reset | first() | dsClk("Back")) {
+if( first() | dsClk("Back") | ~Reset&Reset ) {
     runOnTick(1)
+    
+    dsSend("Halt", "EGP.Portal", entity())
+    dsSend("Update", "EGP.Portal", entity())
     
     # Register player use key events
     dsSend("Bind.Use", "DSS.Events", 2, 1)
     
-    NextID = 1
-    Buttons = array()
-    Map = table()
+    Buttons = table()
+    Controllers = array()
     
     # Make sure we have full control of what being displayed
     E:egpClear()
     E:egpDrawTopLeft(1)
     
-    ID = NextID, NextID++
-    E:egpCreateCursor(ID)
-    
-    createButtons()
+    CursorID = nextID()
+    E:egpCreateCursor(CursorID)
 }
 
 # Setup global persistant variables
-if( first() ) {
-    dsJoinGroup("EGP.Portal") # Join control group
-    # When updating firmware, let subcontrollers know to re-register
-    dsSend("Update", "EGP.Portal", entity())
-    
+if( first() ) {    
     Owner = owner()
-    Controllers = array()
+    Info  = gTable("EGP.Portal")
+    
+    Info["NextID", number] = 1
+    
+    dsJoinGroup("EGP.Portal") # Join control group
 }
+
+if(!->E) { exit() }
+if(!Self) { Self = E:entity() }
 
 # Registration handler
 if(dsClk("Register")) {
     Name = dsGetString()
+    Sender = dsGetSender()
+    
     register(Name)
-    exit()
-}
-
-# Stop execution until we are connected to the EGP Screen
-if(!Self) {
-    if(->E) { Self = E:entity() }
+    
+    dsSendDirect("Registered", Sender, E)
     exit()
 }
 
 # Update for newly registered controllers
-if(Controllers:count() > Map:count()) { createButtons() }
+Count = Controllers:count()
+if(Count > LastCount) { createButtons() }
+LastCount = Count
 
 # Check for and act on hover events
 if( Owner:lookingAt(Self) ) {
-    E:egpPos(1, vec2())
     Cursor = E:egpCursor(Owner)
     
-    for(I = Buttons:minIndex(), Buttons:maxIndex()) {
-        ID = Buttons[I, number]
-        E:egpDimensions(ID)
-        
-        if(inrange(Cursor, TopLeft, BottomRight)) {
-            E:egpHighlight(ID)
+    #foreach(K, Button:table = Buttons) {
+    for(I = 1, Buttons:count()) {
+        Button = Buttons[I, table]
+        if(Button:btHitTest(Cursor)) {
+            Button:btHighlight()
         } else {
-            E:egpUnhighlight(ID)
+            Button:btUnhighlight()
         }
     }
 }
 
 # Check for and act on player use key events
-if(dsClk("Use.Triggered")) {
+if( dsClk("Use.Triggered") & Owner:lookingAt(Self) ) {
     Cursor = E:egpCursor(Owner)
     
-    for(I = Buttons:minIndex(), Buttons:maxIndex()) {
-        ID = Buttons[I, number]
-        E:egpDimensions(ID)
-        
-        if(inrange(Cursor, TopLeft, BottomRight)) {
-            if(Map:exists(ID)) { run(Map[ID, string]) }
+    #foreach(K, Button:table = Buttons) {
+    for(I = 1, Buttons:count()) {
+        Button = Buttons[I, table]
+        if(Button:btHitTest(Cursor)) {
+            if(Button:exists("Controller")) { run( Button["Controller", string] ) }
         }
     }
 }
+
+Ops = opcounter()
