@@ -1,0 +1,31 @@
+@name Allowable Door
+@outputs Open
+@persist Self:entity Threshold
+@model models/props_spytech/doorframe004d.mdl
+
+if( first() | duped() ) {
+    runOnTick(1)
+    Self = entity()
+    
+    Threshold = 55
+    
+    O = owner()
+    O["Allowed", number] = 1
+}
+
+P = Self:pos()
+
+findByClass("player")
+findClipToSphere( P, Threshold )
+findSortByDistance( P )
+Players = findToArray()
+
+for( I = 0, Players:count() ) {
+    E = Players[I, entity]
+    if( E["Allowed", number] == 1 ) {
+        Open = 1
+        exit()
+    }
+}
+
+Open = 0
