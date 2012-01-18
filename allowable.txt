@@ -1,5 +1,5 @@
 @name EGP Allowable
-#@inputs E:wirelink
+@outputs Ops
 @persist E:wirelink App:string
 @persist Owner:entity Self:entity Parent:entity
 @persist Controls:table Info:gtable
@@ -119,7 +119,7 @@ if( first() ) {
     
     # Quick function for creating the cursor
     function void wirelink:egpCreateCursor(ObjectID) {
-        This:egpCircle(ObjectID, vec2(256,256), vec2(2,2))
+        This:egpCircle(ObjectID, vec2(0,0), vec2(2,2))
         This:egpParentToCursor(ObjectID)
         This:egpColor(ObjectID, vec(255, 0, 0))
     }
@@ -216,10 +216,8 @@ if( dsClk("CheckBox.Clicked") ) {
 
 # Check for and act on hover events
 if( Owner:lookingAt(Self) ) {
-    E:egpPos(1, vec2())
     Cursor = E:egpCursor(Owner)
     
-    #foreach(K, Control:table = Controls) {
     for(I = 1, Controls:count()) {
         Control = Controls[I, table]
         if(Control:ctHitTest(Cursor)) {
@@ -234,7 +232,6 @@ if( Owner:lookingAt(Self) ) {
 if( dsClk("Use.Triggered") ) {
     Cursor = E:egpCursor(Owner)
     
-    #foreach(K, Control:table = Controls) {
     for(I = 1, Controls:count()) {
         Control = Controls[I, table]
         if( Control:ctHitTest(Cursor) ) {
@@ -242,3 +239,5 @@ if( dsClk("Use.Triggered") ) {
         }
     }
 }
+
+Ops = opcounter()
